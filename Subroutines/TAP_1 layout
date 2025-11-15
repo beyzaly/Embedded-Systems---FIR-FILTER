@@ -1,0 +1,26 @@
+TAP_1	
+	;Multiply - x (k-1) * 0.5
+	movf	x_k1_lower,0	   ;Store Lower byte into temp reg
+	movwf	temp_lower
+	
+	movf	x_k1_upper,0	   ;Store Upper byte into temp reg
+	movwf	temp_upper
+	
+	bcf	STATUS,C	   ;Clear Carry Flag
+	rlf	temp_lower,1	   ;Shift Left : 0.5 x 4 = 2
+	rlf	temp_upper,1
+	
+	call	Overflow	   ;Check Arithmetic overflow
+	;if required insert saturation logic here
+	
+	;Add into Accumulator
+	movf	temp_lower,0
+	Addwf	accum_lower,1
+	btfsc	STATUS, C
+	incf	accum_upper,1
+	
+	movf	temp_upper,0
+	Addwf	accum_upper,1
+	call	Overflow
+	;if required insert saturation logic here
+	return
