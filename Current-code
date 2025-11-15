@@ -171,7 +171,6 @@ UNSCALE_OUTPUT
 	
 UPDATE_DELAY_LINE
 	
-;Step 3	
 TAP_1	
 	;Multiply - x (k-1) * 0.5 (Q2 scaled is x2)
 	movf	x_k1_lower,w	   ;Load Lower byte of x(k-1)
