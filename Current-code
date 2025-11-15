@@ -1,0 +1,418 @@
+;**********************************************************************
+;                                                                     *
+;    FIR Filter - Coursework1 Filter 7                                *                                                                 *
+;    Author:                                                          *
+;    Date:                                                            *
+;                                                                     * 
+;**********************************************************************
+
+	list		p=16f877A	
+	#include	<p16f877A.inc>	
+	
+    __CONFIG _CP_OFF & _WDT_OFF & _BODEN_OFF & _PWRTE_ON & _RC_OSC & _WRT_OFF & _LVP_ON & _CPD_OFF
+
+
+;**************************************************************************
+; Variable definations							  
+;**************************************************************************
+
+;Input Sample
+x_k		EQU	0x20		
+x_k_lower	EQU	0x21
+x_k_upper	EQU	0x22
+
+;Delayed Samples
+x_k1_lower	EQU	0x23
+x_k1_upper	EQU	0x24
+		
+x_k2_lower	EQU	0x24
+x_k2_upper	EQU	0x25
+
+x_k3_lower	EQU	0x26
+x_k3_upper	EQU	0x27
+	
+x_k4_lower	EQU	0x27
+x_k4_upper	EQU
+	
+x_k5_lower	EQU
+x_k5_upper	EQU
+	
+x_k6_lower	EQU
+x_k6_upper	EQU
+	
+x_k7_lower	EQU
+x_k7_upper	EQU
+	
+;Temporary Working Registers
+temp_lower	EQU	0x
+temp_upper	EQU	0x
+
+temp2_lower	EQU
+temp2_upper	EQU
+
+;Accumulator
+accum_lower	EQU	0x7B
+accum_upper	EQU	0x7C		
+	
+;Output
+y_k		EQU	
+	
+	
+;Context Saving Variables
+w_temp		EQU	0x7D		; variable used for context saving 
+status_temp	EQU	0x7E		; variable used for context saving
+pclath_temp	EQU	0x7F		; variable used for context saving
+	
+
+;****************************************************************************
+	ORG     0x000             ; processor reset vector
+	nop			  ; nop required for icd
+  	goto    main              ; go to beginning of program
+
+	ORG     0x004             ; interrupt vector location
+
+	movwf   w_temp            ; save off current W register contents
+	movf	STATUS,w          ; move status register into W register
+	movwf	status_temp       ; save off contents of STATUS register
+	movf	PCLATH,w	  ; move pclath register into w register
+	movwf	pclath_temp	  ; save off contents of PCLATH register
+
+; isr code can go here or be located as a call subroutine elsewhere
+
+	movf	pclath_temp,w	  ; retrieve copy of PCLATH register
+	movwf	PCLATH		  ; restore pre-isr PCLATH register contents
+	movf    status_temp,w     ; retrieve copy of STATUS register
+	movwf	STATUS            ; restore pre-isr STATUS register contents
+	swapf   w_temp,f
+	swapf   w_temp,w          ; restore pre-isr W register contents
+	retfie                    ; return from interrupt
+;****************************************************************************
+
+
+main
+	;Clearing all registers at program start
+	clrf	x_k
+	clrf	x_k_lower
+	clrf	x_k_upper
+	return
+	END                       
+
+
+;**************************************************************************
+; Subroutines								  
+;**************************************************************************
+	
+PROCESS_INPUT 
+	;Sign Extension
+	movf	x_k,0		    ;Loading the 8 bit value to W register
+	movwf	x_k_lower	    ;Store into lower byte of 16 bit value
+	
+	btfsc	x_k_lower,7	    ;Check MSB (bit 7) - skip if bit 7 is 0
+	goto	NEGATIVE_INPUT	    ;Bit 7 is 1
+	goto	POSITIVE_INPUT	    ;Bit 7 is 0
+NEGATIVE_INPUT
+	movlw	0xFF		    ;Load 0xFF
+	movwf	x_k_upper	    ;Upper byte for negative numbers set as 0XFF
+	return
+POSITIVE_INPUT
+	clrf	x_k_upper	    ;Clear Upper byte for positive numbers
+	return
+	
+SCALE_INPUT 
+	;Input scaling for two fractional bits
+	;Scaled from Q0 to Q2 (x4)
+	bcf	STATUS,C	   ;Clear Carry Flag
+	rlf	x_k_lower,f	   ;Shift lower byte left (x2)
+	rlf	x_k_upper,f	   ;Shift upper byte left (x2)
+	
+	bcf	STATUS,C	   ;Clear Carry Flag
+	rlf	x_k_lower,f	   ;Shift lower byte left (x2)
+	rlf	x_k_upper,f	   ;Shift upper byte left (x2)
+	return
+	
+CLEAR_ACCUM
+	clrf	accum_lower	   ;Clear acuumulator lower byte
+	clrf	accum_upper	   ;Clear accumulator upper byte
+	return
+	
+OVERFLOW
+	BTFSS	accum_upper,7	   ;Test bit 7
+	goto	positive	   ;If clear the value is positive
+NEGATIVE
+	BTFSS	accum_upper,6	   ;Test bit 6
+	goto	NEG_OVERFLOW_SAT   ;If clear negative overflow ocurred
+	return
+POSITIVE
+	BTFSC	accum_upper,6	   ;Test bit 6
+	goto	POS_OVERFLOW_SAT   ;If set positive overflow ocurred
+	return
+NEG_OVERFLOW_SAT
+	movlw	0X80		   ;Upper byte -32768 : (1000 0000)
+	movwf	accum_upper
+	movlw	0x00		   ;Lower byte -32768 : (0000 0000)
+	movwf	accum_lower
+	return
+POS_OVERFLOW_SAT
+	movlw	0x7F		   ;Upper byte +32767 : (0111 1111)
+	movwf	accum_upper
+	movlw	0xFF		   ;Lower byte +32767 : (1111 1111)
+	movwf	accum_lower
+	
+TWOS_COMPLEMENT
+	comf	temp_lower,1	   ;Invert all lower byte bits
+	comf	temp_upper,1       ;Invert all upper byte bits
+	movlw	0x01		   ;Load 1 into W register 
+	addwf	temp_lower,1	   ;Add 1 to the lower byte
+	btfsc	STATUS,C	   ;Check  if addition produced carry
+	incf	temp_upper,1	   ;If carry flag set,increment upper byte
+	return
+	
+UNSCALE_OUTPUT
+	
+UPDATE_DELAY_LINE
+	
+;Step 3	
+TAP_1	
+	;Multiply - x (k-1) * 0.5 (Q2 scaled is x2)
+	movf	x_k1_lower,w	   ;Load Lower byte of x(k-1)
+	movwf	temp_lower	   ;Store in temp_lower
+	movf	x_k1_upper,w	   ;Load Upper byte of x(k-1)
+	movwf	temp_upper	   ;Store in temp_upper
+	
+	;First Multiplication x2
+	bcf	STATUS,C	   ;Clear Carry Flag
+	rlf	temp_lower,f	   ;Shift lower byte left (x2)
+	rlf	temp_upper,f	   ;Shift upper byte left (x2)
+	
+	;Add into Accumulator
+	movf	temp_lower,w	   ;Load lower byte result
+	Addwf	accum_lower,f	   ;Add to lower byte accumulator
+	btfsc	STATUS,C	   ;If carry flag set, increment upper byte
+	incf	accum_upper,f
+	
+	movf	temp_upper,w	   ;Load upper byte result
+	Addwf	accum_upper,f	   ;Add to upper byte accumulator
+	call	OVERFLOW	   ;Check Arithmetic overflow
+				   ;if required insert saturation logic here
+	return
+	
+TAP_2
+	;Multiply - x(k-2) * 1.5 (Q2 scaled is x6)
+	movf	x_k2_lower,w	   ;Load lower byte of x(k-2)
+	movwf	temp_lower	   ;Store in temp_lower
+	movf	x_k2_upper,w	   ;Load upper byte of x(k-2)
+	movwf	temp_upper	   ;Store in temp_upper
+
+	;First Multiplication x2
+	bcf	STATUS,C	   ;Clear Carry Flag	
+	rlf	temp_lower,f	   ;Shift lower byte left (x2)
+	rlf	temp_upper,f	   ;Shift upper byte left (x2)
+	
+	;Save the x2 multiplication for later addition
+	movf	temp_lower,w	   ;Copy temp_lower to W
+	movwf	temp2_lower	   ;Store in temp2_lower
+	movf	temp_upper,w	   ;Copy temp_upper to W
+	movwf	temp2_upper        ;Store in temp2_upper
+	
+	;Second Multiplication now x4
+	bcf	STATUS,C	   ;Clear Carry Flag
+	rlf	temp_lower,f	   ;Shift lower byte left (x2)
+	rlf	temp_upper,f	   ;Shift upper byte left (x2)
+	
+	;Addition of x4 and x2 values for x6
+	bcf	STATUS, C	   ;Clear Carry Flag
+	movf	temp2_lower,w      ;Load x2 value lower byte
+	addwf	temp_lower,f       ;Add  x2 and x4 lower byte values
+	btfsc	STATUS,C	   ;If carry flag set, increment upper byte
+	incf	temp_upper,f
+	
+	movf	temp2_upper,w	   ;Load x2 value upper byte
+	addwf	temp_upper,f	   ;Add x2 and x4 upper byte values
+	
+	;Add into Accumulator
+	movf	temp_lower,w	   ;Load lower byte result
+	addwf	accum_lower,f	   ;Add to lower byte accumulator
+	btfsc	STATUS,C	   ;If carry flag set, increment upper byte
+	incf	accum_upper,f
+	
+	movf	temp_upper,w	   ;Load upper byte result
+	addwf	accum_upper,f	   ;Add to upper byte accumulator
+	call	OVERFLOW	   ;Check for Arithmetic Overflow
+	return
+	
+TAP_3
+	;Multiply - x(k-3) * 4 (Q2 scaled is x16)
+	movf	x_k3_lower,w	   ;Load Lower byte of x(k-3)
+	movwf	temp_lower	   ;Store in temp_lower
+	movf	x_k3_upper,w	   ;Load Upper byte of x(k-3)
+	movwf	temp_upper	   ;Store in temp_upper
+	
+	;First Multiplication x2
+	bcf	STATUS,C	   ;Clear Carry Flag	
+	rlf	temp_lower,f	   ;Shift lower byte left (x2)
+	rlf	temp_upper,f	   ;Shift upper byte left (x2)
+	
+	;Second Multiplication now x4
+	bcf	STATUS,C	   ;Clear Carry Flag	
+	rlf	temp_lower,f	   ;Shift lower byte left (x2)
+	rlf	temp_upper,f	   ;Shift upper byte left (x2)   
+	
+	;Third Multiplication now x8
+	bcf	STATUS,C	   ;Clear Carry Flag	
+	rlf	temp_lower,f	   ;Shift lower byte left (x2)
+	rlf	temp_upper,f	   ;Shift upper byte left (x2)   
+	
+	;Fourth Multiplication now x16 
+	bcf	STATUS,C	   ;Clear Carry Flag	
+	rlf	temp_lower,f	   ;Shift lower byte left (x2)
+	rlf	temp_upper,f	   ;Shift upper byte left (x2)   
+	
+	;Add into Accumulator
+	movf	temp_lower,w	   ;Load lower byte result
+	addwf	accum_lower,f	   ;Add to lower byte accumulator
+	btfsc	STATUS,C	   ;If carry flag set, increment upper byte
+	incf	accum_upper,f
+	
+	movf	temp_upper,w	   ;Load upper byte result
+	addwf	accum_upper,f	   ;Add to upper byte accumulator
+	call	OVERFLOW	   ;Check for Arithmetic Overflow
+	return
+	
+	
+TAP_4
+	;Multiply - x(k-4) * 4 (Q2 scaled is x16)
+	movf	x_k4_lower,w	   ;Load Lower byte of x(k-4)
+	movwf	temp_lower	   ;Store in temp_lower
+	movf	x_k4_upper,w	   ;Load Upper byte of x(k-4)
+	movwf	temp_upper	   ;Store in temp_upper
+	
+	;First Multiplication x2
+	bcf	STATUS,C	   ;Clear Carry Flag	
+	rlf	temp_lower,f	   ;Shift lower byte left (x2)
+	rlf	temp_upper,f	   ;Shift upper byte left (x2)
+	
+	;Second Multiplication now x4
+	bcf	STATUS,C	   ;Clear Carry Flag	
+	rlf	temp_lower,f	   ;Shift lower byte left (x2)
+	rlf	temp_upper,f	   ;Shift upper byte left (x2)   
+	
+	;Third Multiplication now x8
+	bcf	STATUS,C	   ;Clear Carry Flag	
+	rlf	temp_lower,f	   ;Shift lower byte left (x2)
+	rlf	temp_upper,f	   ;Shift upper byte left (x2)   
+	
+	;Fourth Multiplication now x16 
+	bcf	STATUS,C	   ;Clear Carry Flag	
+	rlf	temp_lower,f	   ;Shift lower byte left (x2)
+	rlf	temp_upper,f	   ;Shift upper byte left (x2)   
+	
+	;Add into Accumulator
+	movf	temp_lower,w	   ;Load lower byte result
+	addwf	accum_lower,f	   ;Add to lower byte accumulator
+	btfsc	STATUS,C	   ;If carry flag set, increment upper byte
+	incf	accum_upper,f
+	
+	movf	temp_upper,w	   ;Load upper byte result
+	addwf	accum_upper,f	   ;Add to upper byte accumulator
+	call	OVERFLOW	   ;Check for Arithmetic Overflow
+	return
+	
+	
+TAP_5
+	;Multiply - x(k-5) * 1.5 (Q2 scaled is x6)
+	movf	x_k5_lower,w	   ;Load lower byte of x(k-5)
+	movwf	temp_lower	   ;Store in temp_lower
+	movf	x_k5_upper,w	   ;Load upper byte of x(k-5)
+	movwf	temp_upper	   ;Store in temp_upper
+
+	;First Multiplication x2
+	bcf	STATUS,C	   ;Clear Carry Flag	
+	rlf	temp_lower,f	   ;Shift lower byte left (x2)
+	rlf	temp_upper,f	   ;Shift upper byte left (x2)
+	
+	;Save the x2 multiplication for later addition
+	movf	temp_lower,w	   ;Copy temp_lower to W
+	movwf	temp2_lower	   ;Store in temp2_lower
+	movf	temp_upper,w	   ;Copy temp_upper to W
+	movwf	temp2_upper        ;Store in temp2_upper
+	
+	;Second Multiplication now x4
+	bcf	STATUS,C	   ;Clear Carry Flag
+	rlf	temp_lower,f	   ;Shift lower byte left (x2)
+	rlf	temp_upper,f	   ;Shift upper byte left (x2)
+	
+	;Addition of x4 and x2 values for x6
+	bcf	STATUS, C	   ;Clear Carry Flag
+	movf	temp2_lower,w      ;Load x2 value lower byte
+	addwf	temp_lower,f       ;Add  x2 and x4 lower byte values
+	btfsc	STATUS,C	   ;If carry flag set, increment upper byte
+	incf	temp_upper,f
+	
+	movf	temp2_upper,w	   ;Load x2 value upper byte
+	addwf	temp_upper,f	   ;Add x2 and x4 upper byte values
+	
+	;Add into Accumulator
+	movf	temp_lower,w	   ;Load lower byte result
+	addwf	accum_lower,f	   ;Add to lower byte accumulator
+	btfsc	STATUS,C	   ;If carry flag set, increment upper byte
+	incf	accum_upper,f
+	
+	movf	temp_upper,w	   ;Load upper byte result
+	addwf	accum_upper,f	   ;Add to upper byte accumulator
+	call	OVERFLOW	   ;Check for Arithmetic Overflow
+	return
+	
+
+TAP_6
+	;Multiply - x(k-6) * 2 (Q2 scaled is x8)
+	movf	x_k6_lower,w	   ;Load Lower byte of x(k-6)
+	movwf	temp_lower	   ;Store in temp_lower
+	movf	x_k6_upper,w	   ;Load Upper byte of x(k-6)
+	movwf	temp_upper	   ;Store in temp_upper
+	
+	;First Multiplication x2
+	bcf	STATUS,C	   ;Clear Carry Flag	
+	rlf	temp_lower,f	   ;Shift lower byte left (x2)
+	rlf	temp_upper,f	   ;Shift upper byte left (x2)
+	
+	;Second Multiplication now x4
+	bcf	STATUS,C	   ;Clear Carry Flag	
+	rlf	temp_lower,f	   ;Shift lower byte left (x2)
+	rlf	temp_upper,f	   ;Shift upper byte left (x2)   
+	
+	;Third Multiplication now x8
+	bcf	STATUS,C	   ;Clear Carry Flag	
+	rlf	temp_lower,f	   ;Shift lower byte left (x2)
+	rlf	temp_upper,f	   ;Shift upper byte left (x2)  
+	
+	;Add into Accumulator
+	movf	temp_lower,w	   ;Load lower byte result
+	addwf	accum_lower,f	   ;Add to lower byte accumulator
+	btfsc	STATUS,C	   ;If carry flag set, increment upper byte
+	incf	accum_upper,f
+	
+	movf	temp_upper,w	   ;Load upper byte result
+	addwf	accum_upper,f	   ;Add to upper byte accumulator
+	call	OVERFLOW	   ;Check for Arithmetic Overflow
+	return
+	
+TAP_7
+	;Multiply - x(k-7) * (-0.25) (Q2 scaled is x-1)
+	movf	x_k7_lower,w	   ;Load Lower byte of x(k-6)
+	movwf	temp_lower	   ;Store in temp_lower
+	movf	x_k7_upper,w	   ;Load Upper byte of x(k-6)
+	movwf	temp_upper	   ;Store in temp_upper
+	
+	call	TWOS_COMPLEMENT	   ;Twos complement
+	
+	;Add into Accumulator
+	movf	temp_lower,w	   ;Load lower byte result
+	addwf	accum_lower,f	   ;Add to lower byte accumulator
+	btfsc	STATUS,C	   ;If carry flag set, increment upper byte
+	incf	accum_upper,f
+	
+	movf	temp_upper,w	   ;Load upper byte result
+	addwf	accum_upper,f	   ;Add to upper byte accumulator
+	call	OVERFLOW	   ;Check for Arithmetic Overflow
+	return
+	
