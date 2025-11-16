@@ -57,12 +57,16 @@ POS_OVERFLOW_SAT
 	movwf	accum_upper
 	movlw	0xFF		   ;Lower byte +32767 : (1111 1111)
 	movwf	accum_lower
+	return
 	
-TWOS_COMPLEMENT
-	comf	temp_lower,1	   ;Invert all lower byte bits
-	comf	temp_upper,1       ;Invert all upper byte bits
-	movlw	0x01		   ;Load 1 into W register 
-	addwf	temp_lower,1	   ;Add 1 to the lower byte
-	btfsc	STATUS,C	   ;Check  if addition produced carry
-	incf	temp_upper,1	   ;If carry flag set,increment upper byte
+UNSCALE_OUTPUT
+	;First Division by 2
+	bcf	STATUS,C	   ;Clear Carry Flag
+	rrf	x_k_lower,f	   ;Shift lower byte right (/2)
+	rrf	x_k_upper,f	   ;Shift upper byte right (/2)
+	
+	;Second Division now by 4
+	bcf	STATUS,C	   ;Clear Carry Flag
+	rrf	x_k_lower,f	   ;Shift lower byte right (/2)
+	rrf	x_k_upper,f	   ;Shift upper byte right (/2)
 	return
